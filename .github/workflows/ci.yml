@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+          components: clippy, rustfmt
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy linting
+        run: cargo clippy --all-targets --features testutils
+
+      - name: Build (WASM)
+        run: cargo build --target wasm32v1-none --release
+
+      - name: Run tests
+        run: cargo test --features testutils
+
+      - name: Check WASM binary size
+        run: |
+          for wasm in target/wasm32v1-none/release/*.wasm; do
+            size=$(stat -c%s "$wasm")
+            echo "$wasm: $size bytes"
+            if [ "$size" -gt 65536 ]; then
+              echo "ERROR: $wasm exceeds 64KB limit!"
+              exit 1
+            fi
+            echo "OK: within 64KB limit"
+          done
